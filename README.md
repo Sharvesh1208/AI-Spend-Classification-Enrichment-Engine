@@ -62,7 +62,7 @@ Please find the comprehensive demonstration video and detailed project report in
 
 Instructions for setting up and running the project locally will be provided here:
 
-1.  Clone the repository: `git clone [Your Repository URL]`
+1.  Clone the repository: `git clone https://github.com/Sharvesh1208/AI-Spend-Classification-Enrichment-Engine`
 2.  Setup Frontend (React/Vite):
     * `cd frontend`
     * `npm install`
