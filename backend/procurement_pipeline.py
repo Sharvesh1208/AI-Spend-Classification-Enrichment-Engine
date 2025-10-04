@@ -19,14 +19,11 @@ model = SentenceTransformer("all-MiniLM-L6-v2")
 
 class EnrichedDescriptionGenerator:
     """
-    Model-based enriched description generator using LLM
+    Enhanced description generator with more natural, contextual outputs
     """
 
     def __init__(self, model_name="google/flan-t5-base"):
-        """
-        Initialize with language model
-        Options: google/flan-t5-base (fast), google/flan-t5-large (better), microsoft/phi-2 (best)
-        """
+        """Initialize with language model"""
         logger.info(f"Loading enriched description model: {model_name}")
 
         try:
@@ -69,56 +66,343 @@ class EnrichedDescriptionGenerator:
             quantity: int = None,
             amount: int = None
     ) -> str:
-        """Generate enriched description using language model"""
+        """Generate enriched description with natural language"""
 
-        if self.generator is None:
-            return self._rule_based_description(text, product, category, vendor, quantity, amount)
+        # Use enhanced rule-based generation for better quality
+        return self._enhanced_contextual_description(text, product, category, vendor, quantity, amount)
 
-        try:
-            prompt = self._build_prompt(text, product, category, vendor, quantity, amount)
+    def _enhanced_contextual_description(self, text, product, category, vendor, quantity, amount):
+        """Generate natural, context-aware descriptions"""
 
-            if "t5" in self.model_name.lower():
-                result = self.generator(prompt, max_length=80, num_return_sequences=1)
-                description = result[0]['generated_text'].strip()
+        text_lower = text.lower()
+
+        # Extract purpose/department context
+        purpose = self._extract_purpose(text_lower)
+
+        # Determine transaction type
+        transaction_type = self._determine_transaction_type(text_lower, quantity, amount)
+
+        # Build natural description
+        parts = []
+
+        # Start with transaction type
+        if transaction_type:
+            parts.append(transaction_type)
+
+        # Add product details - with intelligent inference
+        if product and product != "Unknown Product":
+            product_clean = product.lower()
+
+            # Add quantity context naturally
+            if quantity:
+                if quantity == 1:
+                    parts.append(f"{product_clean}")
+                elif quantity <= 5:
+                    parts.append(f"{quantity} {self._pluralize(product_clean)}")
+                else:
+                    parts.append(f"{quantity} {self._pluralize(product_clean)}")
+        else:
+            # Try to infer product from vendor if missing
+            inferred_product = self._infer_product_from_vendor(vendor, category)
+
+            if inferred_product:
+                if quantity:
+                    if quantity == 1:
+                        parts.append(f"{inferred_product}")
+                    else:
+                        parts.append(f"{quantity} {self._pluralize(inferred_product)}")
+                else:
+                    parts.append(inferred_product)
             else:
-                result = self.generator(prompt, max_new_tokens=50, num_return_sequences=1)
-                full_text = result[0]['generated_text']
-                description = full_text[len(prompt):].strip()
+                # Generic item reference
+                if quantity and quantity > 1:
+                    parts.append(f"{quantity} units")
+                else:
+                    parts.append("items")
 
-            description = self._clean_description(description)
+        # Add vendor naturally
+        if vendor and vendor not in ["N/A", "Unknown"]:
+            vendor_name = vendor.split()[0]  # Use first word of vendor
+            parts.append(f"from {vendor_name}")
 
-            if len(description) < 10 or len(description) > 200:
-                return self._rule_based_description(text, product, category, vendor, quantity, amount)
+        # Add purpose/context
+        if purpose:
+            parts.append(purpose)
+        elif category:
+            # Infer purpose from category
+            category_purpose = self._infer_purpose_from_category(category)
+            if category_purpose:
+                parts.append(category_purpose)
 
-            return description
-
-        except Exception as e:
-            logger.error(f"Error generating description: {str(e)}")
-            return self._rule_based_description(text, product, category, vendor, quantity, amount)
-
-    def _build_prompt(self, text, product, category, vendor, quantity, amount):
-        """Build structured prompt for language model"""
-
-        prompt_parts = []
-        prompt_parts.append("Create a brief business procurement description.")
-        prompt_parts.append(f"Item: {text}")
-
-        if product:
-            prompt_parts.append(f"Product: {product}")
-        if vendor:
-            prompt_parts.append(f"From: {vendor}")
-        if quantity:
-            prompt_parts.append(f"Qty: {quantity}")
+        # Add value context naturally (only for significant amounts)
         if amount:
-            prompt_parts.append(f"Value: ${amount:,}")
+            value_context = self._get_value_context(amount, quantity)
+            if value_context:
+                parts.append(value_context)
 
-        prompt_parts.append("Description:")
+        description = " ".join(parts)
 
-        return " ".join(prompt_parts)
+        # Capitalize first letter
+        if description:
+            description = description[0].upper() + description[1:]
+
+        return description
+
+    def _extract_purpose(self, text_lower):
+        """Extract purpose or department from text"""
+        purpose_patterns = {
+            r'\bfor\s+(development|software|dev)\s+team\b': 'for software development team',
+            r'\bfor\s+(sales|marketing)\s+team\b': 'for sales team',
+            r'\bfor\s+(design|creative)\s+team\b': 'for design team',
+            r'\bfor\s+(hr|human resources)\b': 'for HR department',
+            r'\bfor\s+(finance|accounting)\b': 'for finance team',
+            r'\bfor\s+office\b': 'for office use',
+            r'\bfor\s+remote\s+(work|workers|workforce)\b': 'for remote workforce',
+            r'\bfor\s+(field|on-site)\s+operations\b': 'for field operations',
+            r'\bfor\s+(training|learning)\b': 'for training purposes',
+            r'\bfor\s+employees?\b': 'for employee use',
+            r'\bconference\s+room\b': 'for conference rooms',
+            r'\bmeeting\s+room\b': 'for meeting rooms',
+            r'\bworkstation\b': 'for workstations',
+        }
+
+        for pattern, purpose in purpose_patterns.items():
+            if re.search(pattern, text_lower):
+                return purpose
+
+        return None
+
+    def _determine_transaction_type(self, text_lower, quantity, amount):
+        """Determine the type of transaction"""
+
+        # Check for specific transaction keywords
+        if re.search(r'\bpurchase\b', text_lower):
+            if quantity and quantity > 10:
+                return "Bulk purchase of"
+            return "Purchase of"
+
+        if re.search(r'\border\b', text_lower):
+            return "Order for"
+
+        if re.search(r'\bacquire\b|\bacquisition\b', text_lower):
+            return "Acquisition of"
+
+        if re.search(r'\bprocure\b|\bprocurement\b', text_lower):
+            return "Procurement of"
+
+        if re.search(r'\bsubscription\b', text_lower):
+            return "Subscription to"
+
+        if re.search(r'\blicense\b|\blicensing\b', text_lower):
+            if quantity and quantity > 1:
+                return "Software licensing for"
+            return "License for"
+
+        if re.search(r'\brental\b|\blease\b', text_lower):
+            return "Rental of"
+
+        if re.search(r'\bmaintenance\b', text_lower):
+            return "Maintenance service for"
+
+        if re.search(r'\bconsulting\b', text_lower):
+            return "Consulting services for"
+
+        # Default based on quantity
+        if quantity and quantity > 10:
+            return "Bulk procurement of"
+
+        return "Procurement of"
+
+    def _pluralize(self, word):
+        """Simple pluralization"""
+        if word.endswith('s') or word.endswith('x') or word.endswith('ch') or word.endswith('sh'):
+            return word + 'es'
+        elif word.endswith('y') and len(word) > 1 and word[-2] not in 'aeiou':
+            return word[:-1] + 'ies'
+        else:
+            return word + 's'
+
+    def _infer_purpose_from_category(self, category):
+        """Infer purpose from category"""
+        category_lower = category.lower()
+
+        if 'laptop' in category_lower or 'computer' in category_lower:
+            return 'for business operations'
+        elif 'software' in category_lower:
+            return 'for operational needs'
+        elif 'cloud' in category_lower:
+            return 'for cloud infrastructure'
+        elif 'mobile' in category_lower or 'smartphone' in category_lower:
+            return 'for mobile workforce'
+        elif 'furniture' in category_lower:
+            return 'for workspace improvement'
+        elif 'network' in category_lower:
+            return 'for network infrastructure'
+        elif 'consulting' in category_lower:
+            return 'for business consulting'
+        elif 'maintenance' in category_lower:
+            return 'for equipment maintenance'
+
+        return None
+
+    def _get_value_context(self, amount, quantity):
+        """Add value context only when significant"""
+
+        # Calculate per-unit cost if quantity available
+        if quantity and quantity > 0:
+            per_unit = amount / quantity
+
+            # Only mention value for expensive items
+            if per_unit >= 1000:
+                if amount >= 50000:
+                    return "(major capital investment)"
+                elif amount >= 20000:
+                    return "(significant investment)"
+        else:
+            # No quantity - use total amount
+            if amount >= 100000:
+                return "(major investment)"
+            elif amount >= 50000:
+                return "(substantial procurement)"
+
+        return None
+
+    def _infer_product_from_vendor(self, vendor, category):
+        """Infer likely product based on vendor and category"""
+        if not vendor or vendor in ["N/A", "Unknown"]:
+            return None
+
+        vendor_lower = vendor.lower()
+
+        # Vendor-specific product mappings
+        vendor_products = {
+            'samsung': {
+                'default': 'electronics',
+                'it equipment': 'monitors',
+                'mobile': 'smartphones',
+                'office': 'displays'
+            },
+            'dell': {
+                'default': 'laptops',
+                'it equipment': 'computers',
+                'office': 'workstations'
+            },
+            'hp': {
+                'default': 'laptops',
+                'it equipment': 'computers',
+                'office': 'printers'
+            },
+            'apple': {
+                'default': 'MacBooks',
+                'mobile': 'iPhones',
+                'it equipment': 'Mac computers'
+            },
+            'lenovo': {
+                'default': 'ThinkPad laptops',
+                'it equipment': 'computers',
+                'mobile': 'tablets'
+            },
+            'microsoft': {
+                'default': 'software licenses',
+                'software': 'Office 365 licenses',
+                'cloud': 'Azure services'
+            },
+            'adobe': {
+                'default': 'Creative Cloud licenses',
+                'software': 'software subscriptions'
+            },
+            'oracle': {
+                'default': 'database licenses',
+                'software': 'software licenses',
+                'cloud': 'cloud services'
+            },
+            'salesforce': {
+                'default': 'CRM licenses',
+                'software': 'platform licenses'
+            },
+            'aws': {
+                'default': 'cloud services',
+                'cloud': 'hosting services'
+            },
+            'amazon': {
+                'default': 'cloud services',
+                'cloud': 'AWS hosting'
+            },
+            'google': {
+                'default': 'cloud services',
+                'software': 'Workspace licenses',
+                'cloud': 'Cloud Platform services'
+            },
+            'cisco': {
+                'default': 'network equipment',
+                'it equipment': 'networking hardware'
+            },
+            'ibm': {
+                'default': 'enterprise solutions',
+                'consulting': 'consulting services',
+                'software': 'software licenses'
+            },
+            'ikea': {
+                'default': 'furniture',
+                'office': 'office furniture'
+            },
+            'herman miller': {
+                'default': 'office chairs',
+                'furniture': 'ergonomic furniture'
+            },
+            'steelcase': {
+                'default': 'office furniture',
+                'furniture': 'workspace solutions'
+            },
+            'accenture': {
+                'default': 'consulting services',
+                'consulting': 'professional services'
+            },
+            'deloitte': {
+                'default': 'consulting services',
+                'consulting': 'advisory services'
+            },
+            'zoom': {
+                'default': 'video conferencing licenses',
+                'software': 'meeting platform licenses'
+            },
+            'slack': {
+                'default': 'collaboration software',
+                'software': 'team communication licenses'
+            }
+        }
+
+        # Find matching vendor
+        for vendor_key, products in vendor_products.items():
+            if vendor_key in vendor_lower:
+                # Try to match with category first
+                if category:
+                    category_lower = category.lower()
+                    for cat_key, product in products.items():
+                        if cat_key != 'default' and cat_key in category_lower:
+                            return product
+
+                # Return default product for vendor
+                return products.get('default')
+
+        # Fallback based on category alone
+        if category:
+            category_lower = category.lower()
+            if 'laptop' in category_lower or 'computer' in category_lower:
+                return 'laptops'
+            elif 'software' in category_lower:
+                return 'software licenses'
+            elif 'cloud' in category_lower:
+                return 'cloud services'
+            elif 'furniture' in category_lower:
+                return 'office furniture'
+            elif 'mobile' in category_lower or 'smartphone' in category_lower:
+                return 'mobile devices'
+
+        return None
 
     def _clean_description(self, description: str) -> str:
         """Clean and format generated description"""
-
         description = re.sub(r'^(Description:|Enriched Description:|Summary:)\s*', '', description, flags=re.IGNORECASE)
         description = description.strip().strip('"\'').rstrip('.')
 
@@ -126,78 +410,6 @@ class EnrichedDescriptionGenerator:
             description = description[0].upper() + description[1:]
 
         return description
-
-    def _rule_based_description(self, text, product, category, vendor, quantity, amount):
-        """Fallback rule-based description generator"""
-
-        parts = []
-
-        # Quantity descriptor
-        if quantity:
-            if quantity == 1:
-                parts.append("Single")
-            elif quantity <= 5:
-                parts.append(f"{quantity}")
-            elif quantity <= 20:
-                parts.append(f"Bulk order of {quantity}")
-            else:
-                parts.append(f"Large procurement of {quantity}")
-
-        # Product
-        if product and product != "Unknown Product":
-            parts.append(product.lower())
-        else:
-            parts.append("items")
-
-        # Vendor context
-        if vendor and vendor != "N/A":
-            vendor_short = vendor.split()[0]
-            parts.append(f"from {vendor_short}")
-
-        # Infer purpose
-        text_lower = text.lower()
-        purpose_keywords = {
-            'development': 'for development team',
-            'developer': 'for development team',
-            'office': 'for office operations',
-            'training': 'for training purposes',
-            'sales': 'for sales team',
-            'design': 'for design department',
-            'field': 'for field operations',
-            'remote': 'for remote workforce',
-            'employee': 'for employee use',
-            'staff': 'for staff use'
-        }
-
-        purpose_found = False
-        for keyword, purpose in purpose_keywords.items():
-            if keyword in text_lower:
-                parts.append(purpose)
-                purpose_found = True
-                break
-
-        if not purpose_found and category:
-            if 'IT Equipment' in category:
-                parts.append("for IT infrastructure")
-            elif 'Software' in category or 'Cloud' in category:
-                parts.append("for business operations")
-            elif 'Mobile' in category:
-                parts.append("for mobile workforce")
-            elif 'Office' in category or 'Furniture' in category:
-                parts.append("for workspace enhancement")
-            else:
-                parts.append("for business use")
-
-        # Value indicator
-        if amount:
-            if amount >= 50000:
-                parts.append("- major investment")
-            elif amount >= 10000:
-                parts.append("- significant procurement")
-
-        return " ".join(parts)
-
-
 class ModelBasedVendorNormalizer:
     """Model-based vendor normalization using embeddings"""
 
@@ -522,7 +734,6 @@ def missing_pipeline(text, category_embeds, vendor_embeds):
 
 
 class EnhancedUnifiedPipeline:
-    """Enhanced Pipeline with model-based vendor normalization and enriched descriptions"""
 
     def __init__(self, support_df, vendor_col="gold_vendor_normalized",
                  category_col="gold_category", raw_col="RawInputStyle"):
@@ -615,7 +826,6 @@ class EnhancedUnifiedPipeline:
             amount, quantity = extract_amount_and_quantity(text)
             product = extract_product(text)
 
-            # Generate enriched description
             enriched_desc = "Standard procurement item"
             if self.description_generator:
                 try:

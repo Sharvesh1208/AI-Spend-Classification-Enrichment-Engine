@@ -190,7 +190,8 @@ async def root():
             "Model-based vendor normalization",
             "Advanced amount and quantity extraction",
             "Product identification with NLP",
-            "Confidence scoring for predictions"
+            "Confidence scoring for predictions",
+            "Support for both CSV and text input"
         ]
 
     return {
@@ -202,6 +203,7 @@ async def root():
         "endpoints": {
             "health": "/health",
             "predict_batch": "/predict (POST)",
+            "predict_text": "/predict-text (POST)",
             "predict_single": "/predict_single (POST)",
             "test": "/test_extraction",
             "stats": "/stats",
@@ -282,6 +284,47 @@ async def predict_batch(file: UploadFile):
 
     except Exception as e:
         logger.error(f"Batch prediction error: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/predict-text")
+async def predict_text(request: dict):
+    """Text input prediction endpoint - supports single or multi-line text"""
+    if pipe is None:
+        raise HTTPException(status_code=503, detail="Pipeline not ready")
+
+    if "text" not in request:
+        raise HTTPException(status_code=400, detail="Request must contain 'text' field")
+
+    text = request["text"]
+
+    try:
+        logger.info(f"Processing text input: {text[:100]}...")
+
+        # Split text into lines if multiple entries
+        lines = [line.strip() for line in text.split('\n') if line.strip()]
+
+        if not lines:
+            raise HTTPException(status_code=400, detail="No valid text provided")
+
+        # Process each line
+        results = []
+        for line in lines:
+            result = pipe.predict_single(line)
+            result['original_text'] = line
+            results.append(clean_dict(result))
+
+        logger.info(f"✅ Processed {len(results)} text entries")
+
+        return {
+            "status": "success",
+            "pipeline_type": pipeline_type,
+            "processed_count": len(results),
+            "results": results
+        }
+    except Exception as e:
+        logger.error(f"Text prediction error: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -408,7 +451,13 @@ async def get_sample_data():
             "required_columns": ["text or RawInputStyle or description"],
             "example": "text\n\"Purchase 10 laptops from Dell\"\n\"Microsoft Office license 5K\""
         },
-        "json_format": {
+        "json_text_format": {
+            "endpoint": "/predict-text",
+            "example": {
+                "text": "Purchase 10 laptops from Dell for development team\nMicrosoft Office 365 subscription 5K"}
+        },
+        "json_single_format": {
+            "endpoint": "/predict_single",
             "example": {"text": "Purchase 10 laptops from Dell for development team"}
         },
         "test_examples": [
@@ -454,5 +503,6 @@ if __name__ == "__main__":
     print("🚀 Starting Enhanced Procurement Classifier API")
     print("📍 Server: http://127.0.0.1:8000")
     print("📖 Docs: http://127.0.0.1:8000/docs")
+    print("📝 Supports: CSV upload & direct text input")
 
     uvicorn.run(app, host="127.0.0.1", port=8000, log_level="info")

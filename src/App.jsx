@@ -1,35 +1,60 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+// src/App.jsx
+import { useState } from 'react';
+import { AuthProvider, useAuth } from './AuthContext';
+import Login from './Login';
+import Dashboard from './Dashboard';
+import SplashScreen from './SplashScreen';
 
-function App() {
-  const [count, setCount] = useState(0)
+function AppContent() {
+  const { currentUser, loading } = useAuth();
 
-  return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
+  if (loading) {
+    return (
+      <div style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "linear-gradient(135deg, #e8f4ff 0%, #d1e9ff 50%, #b3deff 100%)"
+      }}>
+        <div style={{ textAlign: "center" }}>
+          <div style={{
+            width: "50px",
+            height: "50px",
+            border: "4px solid #e5e7eb",
+            borderTopColor: "#0070f3",
+            borderRadius: "50%",
+            animation: "spin 1s linear infinite",
+            margin: "0 auto 1rem"
+          }}></div>
+          <p style={{ color: "#64748b", fontSize: "1rem" }}>Loading...</p>
+        </div>
+        <style>
+          {`
+            @keyframes spin {
+              to { transform: rotate(360deg); }
+            }
+          `}
+        </style>
       </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.jsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
+    );
+  }
+
+  return currentUser ? <Dashboard /> : <Login />;
 }
 
-export default App
+function App() {
+  const [showSplash, setShowSplash] = useState(true);
+
+  return (
+    <AuthProvider>
+      {showSplash ? (
+        <SplashScreen onComplete={() => setShowSplash(false)} />
+      ) : (
+        <AppContent />
+      )}
+    </AuthProvider>
+  );
+}
+
+export default App;
