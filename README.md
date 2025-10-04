@@ -1,9 +1,7 @@
 # AI-Based Spend Classification and Enrichment Engine 💰
 
 ## Presented by: Team CogniSynth
-**Team Members:** Sharvesh K
-                  Keerthi Vardhan M
-                  Prathibha M
+**Team Members:** 1) Sharvesh K  |  2) Keerthi Vardhan M  |  3) Prathibha M
 
 ---
 
